@@ -4,7 +4,7 @@ import "./styles.css";
 
 type EvidenceArtifact = {
   id: string;
-  kind: "repository" | "issue" | "workflow" | "commit" | "error";
+  kind: "repository" | "issue" | "workflow" | "commit" | "source" | "error";
   title: string;
   preview: string;
   source_url: string;
@@ -18,6 +18,15 @@ type Hypothesis = {
   evidence_ids: string[];
 };
 
+type InvestigationStep = {
+  id: string;
+  title: string;
+  command: string[];
+  rationale: string;
+  evidence_ids: string[];
+  status: "proposed";
+};
+
 export type Investigation = {
   id: string;
   repository: { owner: string; name: string };
@@ -26,6 +35,7 @@ export type Investigation = {
   status: "running" | "awaiting_approval" | "approved" | "rejected" | "insufficient_evidence";
   evidence: EvidenceArtifact[];
   hypotheses: Hypothesis[];
+  plan: InvestigationStep[];
   draft: string;
   publishable_comment: string | null;
   published: boolean;
@@ -137,7 +147,7 @@ export function App({
   return (
     <main>
       <header className="hero">
-        <p className="eyebrow">DURABLE GITHUB INVESTIGATION AGENT</p>
+        <p className="eyebrow">V3 · SOURCE-AWARE GITHUB INVESTIGATION AGENT</p>
         <h1>IssuePilot</h1>
         <p className="lede">
           Investigate repository failures through allowlisted GitHub tools, replayable evidence,
@@ -190,6 +200,7 @@ function InvestigationView({ result, events, loading, onDecide }: {
       <div className="status-row"><span className="mode">{result.repository.owner}/{result.repository.name}</span><span className="approval">{STATUS_LABELS[result.status]}</span></div>
       <section><h3>Hypotheses</h3><ol className="hypotheses">{result.hypotheses.map((item) => <li key={item.id}><strong>{item.status}</strong><span>{item.statement}</span></li>)}</ol></section>
       <section><h3>GitHub evidence</h3><ol className="citations">{result.evidence.map((item) => <li key={item.id}><a href={item.source_url} target="_blank" rel="noreferrer">{item.title}</a><code>{item.tool}</code><p>{item.preview}</p></li>)}</ol></section>
+      <section><h3>Verification plan</h3><ol className="citations">{result.plan.map((step) => <li key={step.id}><strong>{step.title}</strong><code>{step.command.join(" ")}</code><p>{step.rationale}</p></li>)}</ol></section>
       <article className="draft"><h3>Cited draft</h3><pre>{result.draft}</pre></article>
       <section><h3>Replayable trajectory</h3><ol className="trace-spans">{events.map((event) => <li key={event.sequence}>{String(event.sequence).padStart(2, "0")} · {event.name}</li>)}</ol></section>
       {result.status === "awaiting_approval" ? <div className="decision-row"><button type="button" disabled={loading} onClick={() => onDecide("approve")}>Approve evidence draft</button><button className="secondary" type="button" disabled={loading} onClick={() => onDecide("reject")}>Reject draft</button></div> : null}

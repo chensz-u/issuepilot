@@ -35,7 +35,7 @@ class RepositoryRef(BaseModel):
 
 class EvidenceArtifact(BaseModel):
     id: str
-    kind: Literal["repository", "issue", "workflow", "commit", "error"]
+    kind: Literal["repository", "issue", "workflow", "commit", "source", "error"]
     title: str
     preview: str = Field(max_length=800)
     source_url: str
@@ -55,6 +55,15 @@ class InvestigationEvent(BaseModel):
     payload: dict[str, Any]
 
 
+class InvestigationStep(BaseModel):
+    id: str
+    title: str
+    command: tuple[str, ...]
+    rationale: str
+    evidence_ids: tuple[str, ...]
+    status: Literal["proposed"] = "proposed"
+
+
 class Investigation(BaseModel):
     id: str
     repository: RepositoryRef
@@ -63,6 +72,7 @@ class Investigation(BaseModel):
     status: Literal["running", "awaiting_approval", "approved", "rejected", "insufficient_evidence"]
     evidence: tuple[EvidenceArtifact, ...] = ()
     hypotheses: tuple[Hypothesis, ...] = ()
+    plan: tuple[InvestigationStep, ...] = ()
     draft: str = ""
     publishable_comment: str | None = None
     published: bool = False

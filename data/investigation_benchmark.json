@@ -30,10 +30,11 @@
     "body": "The failure started after the latest cache ownership change",
     "evidence": [
       {"id":"commit-abcdef123456","kind":"commit","title":"refactor cache ownership","preview":"Latest cache ownership refactor","source_url":"https://github.com/acme/widget/commit/abcdef123456","tool":"inspect_recent_commits"},
+      {"id":"source-cache-owner","kind":"source","title":"src/cache_owner.py","preview":"The cache ownership change controls the failing lock lifecycle.","source_url":"https://github.com/acme/widget/blob/abcdef/src/cache_owner.py","tool":"inspect_source_code"},
       {"id":"issue-printer","kind":"issue","title":"Printer setup","preview":"Install the black toner cartridge.","source_url":"https://github.com/acme/widget/issues/99","tool":"search_issues"}
     ],
-    "expected_evidence_ids": ["commit-abcdef123456"],
-    "expected_hypothesis_statuses": {"commit-abcdef123456":"supported","issue-printer":"rejected"}
+    "expected_evidence_ids": ["commit-abcdef123456", "source-cache-owner"],
+    "expected_hypothesis_statuses": {"commit-abcdef123456":"supported","source-cache-owner":"supported","issue-printer":"rejected"}
   },
   {
     "id": "repository-context",

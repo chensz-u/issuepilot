@@ -31,6 +31,7 @@ class InvestigationEvaluationReport(BaseModel):
     relevance_precision: float
     hypothesis_support_rate: float
     citation_grounding_rate: float
+    plan_grounding_rate: float
     trajectory_completeness: float
     approval_safety: float
 
@@ -56,7 +57,7 @@ async def evaluate_investigations(
 ) -> InvestigationEvaluationReport:
     if not cases:
         raise ValueError("benchmark requires at least one case")
-    recall = precision = support = grounding = trajectory = safety = 0
+    recall = precision = support = grounding = plan_grounding = trajectory = safety = 0
     with tempfile.TemporaryDirectory(prefix="issuepilot-eval-") as directory:
         root = Path(directory)
         for index, case in enumerate(cases):
@@ -87,12 +88,21 @@ async def evaluate_investigations(
                 support += actual_statuses == case.expected_hypothesis_statuses
                 cited_ids = set(re.findall(r"\[([^\]]+)\]", result.draft))
                 grounding += cited_ids == expected_ids == actual_ids
+                plan_grounding += (
+                    len(result.plan) == 1
+                    and set(result.plan[0].evidence_ids) == expected_ids == actual_ids
+                    and result.plan[0].command == ("python", "-m", "pytest", "-q")
+                    and result.plan[0].status == "proposed"
+                    if expected_ids
+                    else not result.plan
+                )
                 if expected_ids:
                     safety += result.status == "awaiting_approval"
                     required_events = [
                         "validate",
                         "tools",
                         "hypothesize",
+                        "plan",
                         "synthesize",
                         "awaiting_approval",
                     ]
@@ -105,7 +115,7 @@ async def evaluate_investigations(
                             for hypothesis in result.hypotheses
                         )
                     )
-                    required_events = ["validate", "tools", "hypothesize", "synthesize"]
+                    required_events = ["validate", "tools", "hypothesize", "plan", "synthesize"]
                 events = store.list_events(result.id)
                 trajectory += [event.name for event in events] == required_events and [
                     event.sequence for event in events
@@ -117,6 +127,7 @@ async def evaluate_investigations(
         relevance_precision=round(precision / count, 4),
         hypothesis_support_rate=round(support / count, 4),
         citation_grounding_rate=round(grounding / count, 4),
+        plan_grounding_rate=round(plan_grounding / count, 4),
         trajectory_completeness=round(trajectory / count, 4),
         approval_safety=round(safety / count, 4),
     )
@@ -128,6 +139,7 @@ def require_investigation_quality(report: InvestigationEvaluationReport) -> None
         "relevance_precision",
         "hypothesis_support_rate",
         "citation_grounding_rate",
+        "plan_grounding_rate",
         "trajectory_completeness",
         "approval_safety",
     )

@@ -29,12 +29,22 @@ const awaiting: Investigation = {
       evidence_ids: ["issue-7"],
     },
   ],
+  plan: [
+    {
+      id: "verify-supported-evidence",
+      title: "Reproduce the supported repository evidence",
+      command: ["python", "-m", "pytest", "-q"],
+      rationale: "Run the repository test suite before changing code.",
+      evidence_ids: ["issue-7"],
+      status: "proposed",
+    },
+  ],
   draft: "Investigate the worker cache lock [issue-7].",
   publishable_comment: null,
   published: false,
 };
 
-describe("IssuePilot V2 investigation console", () => {
+describe("IssuePilot V3 investigation console", () => {
   it("renders repository evidence trajectory and human approval", async () => {
     const start = vi.fn().mockResolvedValue(awaiting);
     const replay = vi.fn().mockResolvedValue([
@@ -59,6 +69,7 @@ describe("IssuePilot V2 investigation console", () => {
       "https://github.com/acme/widget/issues/7",
     );
     expect(screen.getByText("search_issues")).toBeInTheDocument();
+    expect(screen.getByText("python -m pytest -q")).toBeInTheDocument();
     expect(screen.getByText("02 · tools")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Approve evidence draft" }));

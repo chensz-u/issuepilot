@@ -1,23 +1,24 @@
-# IssuePilot V2
+# IssuePilot V3
 
 Durable, evidence-first GitHub repository investigation agent for an AI application/backend portfolio.
 
-IssuePilot accepts a repository and failure report, executes four allowlisted GitHub read tools, forms explicit hypotheses, produces a document-id-cited draft, and pauses at a durable human approval checkpoint. The same investigation can be reloaded and resumed after the API process restarts. It never runs shell commands, clones a repository, changes GitHub state, or publishes a comment.
+IssuePilot accepts a repository and failure report, executes five allowlisted GitHub read tools, forms explicit hypotheses, produces a document-id-cited draft and an evidence-linked verification plan, then pauses at a durable human approval checkpoint. The same investigation can be reloaded and resumed after the API process restarts. It never executes the proposed commands, clones a repository, changes GitHub state, or publishes a comment.
 
-## What makes V2 an agent system
+## What makes V3 an agent system
 
 | Capability | Verifiable implementation |
 | --- | --- |
-| Stateful workflow | LangGraph nodes: validate → tools → hypothesize → synthesize → approval interrupt |
+| Stateful workflow | LangGraph nodes: validate → tools → hypothesize → plan → synthesize → approval interrupt |
 | Durable execution | `langgraph-checkpoint-sqlite`; restart/resume is covered by an automated test |
-| Real tools | Fixed GitHub REST calls for README, Issue search, failed Actions runs, and recent commits |
+| Real tools | Fixed GitHub REST calls for README, issues, failed Actions runs, commits, and bounded relevant source files |
 | Evidence discipline | Every observation has an id, source URL, bounded preview, and originating tool |
 | Human control | Approve/reject resumes the graph; no-evidence investigations cannot be approved |
 | Replay | Ordered append-only events exposed as SSE and rendered in the React trajectory |
 | Retrieval | Apache-2.0 `rank-bm25` supplies BM25Plus; deterministic vector reranking remains explicit |
-| Evaluation | Five-case synthetic gate checks recall, distractor precision, hypotheses, exact citations, ordered trajectory, and approval safety |
+| Verification plan | Evidence-linked argv steps are proposed for a human to run; IssuePilot executes none of them |
+| Evaluation | Five-case synthetic gate checks recall, distractor precision, hypotheses, exact citations, plan grounding, ordered trajectory, and approval safety |
 
-The latest V2 result is [`docs/evidence/investigation-evaluation.json`](docs/evidence/investigation-evaluation.json). All six metrics, including relevance precision against per-case distractors, are `1.0` on the committed synthetic regression fixture. That is a reproducibility claim, not production accuracy.
+The latest V3 result is [`docs/evidence/investigation-evaluation.json`](docs/evidence/investigation-evaluation.json). All seven metrics, including relevance precision and exact plan grounding against source/distractor cases, are `1.0` on the committed synthetic regression fixture. That is a reproducibility claim, not production accuracy.
 
 ## Open-source foundations
 

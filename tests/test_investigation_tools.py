@@ -1,3 +1,5 @@
+import re
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -16,6 +18,96 @@ def test_repository_ref_accepts_only_owner_name() -> None:
         RepositoryRef.parse("../x")
     with pytest.raises(ValidationError):
         RepositoryRef.parse("acme/..")
+
+
+@pytest.mark.asyncio
+async def test_source_tool_reads_only_relevant_bounded_repository_files() -> None:
+    calls: list[str] = []
+    blob_sha = "a" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/repos/acme/widget":
+            return httpx.Response(200, json={"default_branch": "main"})
+        if request.url.path == "/repos/acme/widget/git/trees/main":
+            assert request.url.params["recursive"] == "1"
+            return httpx.Response(
+                200,
+                json={
+                    "tree": [
+                        {"type": "blob", "path": "src/cache_lock.py", "size": 120, "sha": blob_sha},
+                        {"type": "blob", "path": "docs/printer.md", "size": 90},
+                        {"type": "blob", "path": "../escape.py", "size": 10},
+                        {"type": "blob", "path": "large/cache_lock.bin", "size": 900_000},
+                    ]
+                },
+            )
+        if request.url.path == f"/repos/acme/widget/git/blobs/{blob_sha}":
+            return httpx.Response(
+                200,
+                json={
+                    "content": "ZGVmIHJlbGVhc2VfY2FjaGVfbG9jaygpOiBwYXNz",
+                    "encoding": "base64",
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = GitHubEvidenceClient(http)
+        evidence = await client.inspect_source_code(
+            RepositoryRef.parse("acme/widget"), "Windows package cache lock"
+        )
+
+    assert len(evidence) == 1
+    assert re.fullmatch(r"source-[0-9a-f]{16}", evidence[0].id)
+    assert evidence[0].kind == "source"
+    assert "release_cache_lock" in evidence[0].preview
+    assert calls == [
+        "/repos/acme/widget",
+        "/repos/acme/widget/git/trees/main",
+        f"/repos/acme/widget/git/blobs/{blob_sha}",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_source_tool_rejects_moved_oversized_blob_and_ids_do_not_collide() -> None:
+    first_sha = "a" * 40
+    second_sha = "b" * 40
+    large_sha = "c" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/repos/acme/widget":
+            return httpx.Response(200, json={"default_branch": "main"})
+        if request.url.path == "/repos/acme/widget/git/trees/main":
+            return httpx.Response(
+                200,
+                json={
+                    "tree": [
+                        {"type": "blob", "path": "src/cache-lock.py", "size": 10, "sha": first_sha},
+                        {
+                            "type": "blob",
+                            "path": "src/cache/lock.py",
+                            "size": 10,
+                            "sha": second_sha,
+                        },
+                        {"type": "blob", "path": "src/cache_lock.py", "size": 10, "sha": large_sha},
+                    ]
+                },
+            )
+        if request.url.path.endswith(large_sha):
+            return httpx.Response(
+                200,
+                json={"encoding": "base64", "content": "YQ==" * 100_001},
+            )
+        return httpx.Response(200, json={"encoding": "base64", "content": "Y2FjaGUgbG9jaw=="})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        evidence = await GitHubEvidenceClient(http).inspect_source_code(
+            RepositoryRef.parse("acme/widget"), "cache lock"
+        )
+
+    assert len(evidence) == 2
+    assert len({item.id for item in evidence}) == 2
 
 
 @pytest.mark.asyncio
@@ -69,6 +161,30 @@ async def test_real_read_only_tools_use_fixed_github_endpoints() -> None:
                     }
                 ],
             )
+        if request.url.path == "/repos/acme/widget":
+            return httpx.Response(200, json={"default_branch": "main"})
+        if request.url.path == "/repos/acme/widget/git/trees/main":
+            return httpx.Response(
+                200,
+                json={
+                    "tree": [
+                        {
+                            "type": "blob",
+                            "path": "src/cache_lock.py",
+                            "size": 50,
+                            "sha": "d" * 40,
+                        }
+                    ]
+                },
+            )
+        if request.url.path == f"/repos/acme/widget/git/blobs/{'d' * 40}":
+            return httpx.Response(
+                200,
+                json={
+                    "content": "Y2FjaGVfbG9jayA9IFRydWU=",
+                    "encoding": "base64",
+                },
+            )
         raise AssertionError(request.url)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
@@ -83,8 +199,17 @@ async def test_real_read_only_tools_use_fixed_github_endpoints() -> None:
         "/search/issues",
         "/repos/acme/widget/actions/runs",
         "/repos/acme/widget/commits",
+        "/repos/acme/widget",
+        "/repos/acme/widget/git/trees/main",
+        f"/repos/acme/widget/git/blobs/{'d' * 40}",
     ]
-    assert {item.kind for item in evidence} == {"repository", "issue", "workflow", "commit"}
+    assert {item.kind for item in evidence} == {
+        "repository",
+        "issue",
+        "workflow",
+        "commit",
+        "source",
+    }
     assert all(item.source_url.startswith("https://github.com/acme/widget") for item in evidence)
     assert "ghp_secret" not in " ".join(item.preview for item in evidence)
 

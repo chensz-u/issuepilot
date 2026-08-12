@@ -5,6 +5,7 @@
   "relevance_precision": 1.0,
   "hypothesis_support_rate": 1.0,
   "citation_grounding_rate": 1.0,
+  "plan_grounding_rate": 1.0,
   "trajectory_completeness": 1.0,
   "approval_safety": 1.0
 }

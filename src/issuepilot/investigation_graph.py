@@ -11,6 +11,7 @@ from issuepilot.investigation_domain import (
     EvidenceArtifact,
     Hypothesis,
     Investigation,
+    InvestigationStep,
     RepositoryRef,
 )
 from issuepilot.investigation_store import InvestigationStore
@@ -33,6 +34,7 @@ class InvestigationState(TypedDict, total=False):
     status: str
     evidence: list[dict[str, Any]]
     hypotheses: list[dict[str, Any]]
+    plan: list[dict[str, Any]]
     draft: str
     publishable_comment: str | None
     published: bool
@@ -51,12 +53,14 @@ class InvestigationService:
         builder.add_node("validate", self._validate)
         builder.add_node("tools", self._execute_tools)
         builder.add_node("hypothesize", self._hypothesize)
+        builder.add_node("plan", self._plan)
         builder.add_node("synthesize", self._synthesize)
         builder.add_node("approval", self._approval)
         builder.add_edge(START, "validate")
         builder.add_edge("validate", "tools")
         builder.add_edge("tools", "hypothesize")
-        builder.add_edge("hypothesize", "synthesize")
+        builder.add_edge("hypothesize", "plan")
+        builder.add_edge("plan", "synthesize")
         builder.add_conditional_edges(
             "synthesize",
             lambda state: "stop" if state["status"] == "insufficient_evidence" else "review",
@@ -76,6 +80,7 @@ class InvestigationService:
             "status": "running",
             "evidence": [],
             "hypotheses": [],
+            "plan": [],
             "draft": "",
             "publishable_comment": None,
             "published": False,
@@ -205,6 +210,30 @@ class InvestigationService:
         return {"hypotheses": [item.model_dump(mode="json") for item in hypotheses]}
 
     @staticmethod
+    def _plan(state: InvestigationState) -> InvestigationState:
+        hypotheses = [Hypothesis.model_validate(item) for item in state["hypotheses"]]
+        supported_ids = [
+            evidence_id
+            for hypothesis in hypotheses
+            if hypothesis.status == "supported"
+            for evidence_id in hypothesis.evidence_ids
+        ]
+        steps = (
+            [
+                InvestigationStep(
+                    id="verify-supported-evidence",
+                    title="Reproduce the supported repository evidence",
+                    command=("python", "-m", "pytest", "-q"),
+                    rationale="Run the repository test suite before changing code.",
+                    evidence_ids=tuple(supported_ids),
+                )
+            ]
+            if supported_ids
+            else []
+        )
+        return {"plan": [item.model_dump(mode="json") for item in steps]}
+
+    @staticmethod
     def _synthesize(state: InvestigationState) -> InvestigationState:
         evidence = [EvidenceArtifact.model_validate(item) for item in state["evidence"]]
         hypotheses = [Hypothesis.model_validate(item) for item in state["hypotheses"]]
@@ -247,6 +276,7 @@ class InvestigationService:
             status=state["status"],  # type: ignore[arg-type]
             evidence=tuple(EvidenceArtifact.model_validate(item) for item in state["evidence"]),
             hypotheses=tuple(Hypothesis.model_validate(item) for item in state["hypotheses"]),
+            plan=tuple(InvestigationStep.model_validate(item) for item in state.get("plan", [])),
             draft=state["draft"],
             publishable_comment=state.get("publishable_comment"),
             published=state.get("published", False),

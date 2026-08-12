@@ -1,13 +1,20 @@
 import base64
+import hashlib
 import re
 from collections.abc import Awaitable, Callable
+from pathlib import PurePosixPath
+from urllib.parse import quote
 
 import httpx
 
 from issuepilot.investigation_domain import EvidenceArtifact, RepositoryRef
+from issuepilot.retrieval import tokenize
 
 TOKEN_PATTERN = re.compile(r"(?i)(?:ghp|github_pat)_[A-Za-z0-9_]+")
 SEARCH_TERM_PATTERN = re.compile(r"[\w.-]+")
+SOURCE_SUFFIXES = {".go", ".java", ".js", ".jsx", ".py", ".rs", ".ts", ".tsx"}
+MAX_SOURCE_BYTES = 200_000
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _safe(text: str, token: str | None = None) -> str:
@@ -117,6 +124,80 @@ class GitHubEvidenceClient:
             for item in response.json()[:5]
         ]
 
+    async def inspect_source_code(
+        self, repository: RepositoryRef, query: str
+    ) -> list[EvidenceArtifact]:
+        metadata = await self.http.get(
+            f"https://api.github.com/repos/{repository.full_name}", headers=self.headers
+        )
+        metadata.raise_for_status()
+        branch = metadata.json()["default_branch"]
+        tree_url = (
+            f"https://api.github.com/repos/{repository.full_name}/git/trees/"
+            f"{quote(branch, safe='')}"
+        )
+        tree = await self.http.get(
+            tree_url,
+            params={"recursive": "1"},
+            headers=self.headers,
+        )
+        tree.raise_for_status()
+        query_tokens = set(tokenize(query))
+        candidates: list[tuple[int, str, str]] = []
+        for item in tree.json().get("tree", []):
+            path = item.get("path", "")
+            sha = item.get("sha", "")
+            parsed = PurePosixPath(path)
+            if (
+                item.get("type") != "blob"
+                or not path
+                or parsed.is_absolute()
+                or ".." in parsed.parts
+                or parsed.suffix.lower() not in SOURCE_SUFFIXES
+                or item.get("size", MAX_SOURCE_BYTES + 1) > MAX_SOURCE_BYTES
+                or not SHA_PATTERN.fullmatch(sha)
+            ):
+                continue
+            path_terms = re.sub(r"[/_.-]+", " ", path)
+            score = len(query_tokens & set(tokenize(path_terms)))
+            if score:
+                candidates.append((score, path, sha))
+        evidence: list[EvidenceArtifact] = []
+        for _, path, sha in sorted(candidates, key=lambda item: (-item[0], item[1]))[:3]:
+            content_url = f"https://api.github.com/repos/{repository.full_name}/git/blobs/{sha}"
+            response = await self.http.get(
+                content_url,
+                headers=self.headers,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            encoded = "".join(payload.get("content", "").split())
+            max_encoded_bytes = ((MAX_SOURCE_BYTES + 2) // 3) * 4
+            if payload.get("encoding") != "base64" or len(encoded) > max_encoded_bytes:
+                continue
+            try:
+                decoded = base64.b64decode(encoded, validate=True)
+            except ValueError:
+                continue
+            if len(decoded) > MAX_SOURCE_BYTES:
+                continue
+            preview = decoded.decode("utf-8", errors="replace")
+            artifact_id = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
+            evidence.append(
+                EvidenceArtifact(
+                    id=f"source-{artifact_id}",
+                    kind="source",
+                    title=path,
+                    preview=_safe(preview, self.token),
+                    source_url=(
+                        f"https://github.com/{repository.full_name}/blob/{sha}/"
+                        f"{quote(path, safe='/')}"
+                    ),
+                    tool="inspect_source_code",
+                )
+            )
+        return evidence
+
 
 class InvestigationToolRegistry:
     names = (
@@ -124,6 +205,7 @@ class InvestigationToolRegistry:
         "search_issues",
         "inspect_failed_workflows",
         "inspect_recent_commits",
+        "inspect_source_code",
     )
 
     def __init__(self, client: GitHubEvidenceClient) -> None:

@@ -63,6 +63,7 @@ async def test_investigation_create_replay_get_and_approval_api(tmp_path: Path) 
             )
 
     assert loaded.json()["status"] == "awaiting_approval"
+    assert loaded.json()["plan"][0]["command"] == ["python", "-m", "pytest", "-q"]
     assert replay.headers["content-type"].startswith("text/event-stream")
     assert "event: tools" in replay.text
     assert "id: 1" in replay.text

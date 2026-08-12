@@ -48,6 +48,7 @@ async def test_investigation_evaluation_measures_full_evidence_chain() -> None:
     assert report.relevance_precision == 1.0
     assert report.hypothesis_support_rate == 1.0
     assert report.citation_grounding_rate == 1.0
+    assert report.plan_grounding_rate == 1.0
     assert report.trajectory_completeness == 1.0
     assert report.approval_safety == 1.0
     require_investigation_quality(report)
@@ -67,4 +68,5 @@ def test_committed_investigation_benchmark_is_not_trivial() -> None:
         "workflow",
         "commit",
         "repository",
+        "source",
     }

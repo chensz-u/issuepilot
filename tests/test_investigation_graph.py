@@ -98,6 +98,9 @@ async def test_investigation_pauses_and_resumes_after_service_restart(tmp_path: 
     assert [item.status for item in awaiting.hypotheses] == ["supported", "supported"]
     assert "[issue-7]" in awaiting.draft
     assert "[workflow-9]" in awaiting.draft
+    assert awaiting.plan
+    assert all(step.evidence_ids for step in awaiting.plan)
+    assert any(step.command == ("python", "-m", "pytest", "-q") for step in awaiting.plan)
 
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
         restarted = InvestigationService(
@@ -113,6 +116,7 @@ async def test_investigation_pauses_and_resumes_after_service_restart(tmp_path: 
     events = InvestigationStore(projection_path).list_events(awaiting.id)
     assert [event.sequence for event in events] == list(range(1, len(events) + 1))
     assert events[-1].name == "approval"
+    assert "plan" in [event.name for event in events]
 
 
 class EmptyTools:
