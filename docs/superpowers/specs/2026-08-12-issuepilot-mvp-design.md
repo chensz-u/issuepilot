@@ -11,7 +11,7 @@ Build a portfolio-ready GitHub issue diagnosis copilot that demonstrates grounde
 - Diagnose a new issue with citations and a small allowlist of read-only tools.
 - Require explicit approval before producing a publishable comment payload; never post to GitHub.
 - Record an end-to-end trace containing retrieval, tool, generation, latency, and mode evidence.
-- Run a committed offline benchmark for retrieval, citation coverage, tool choice, and latency.
+- Run a committed offline benchmark for retrieval, draft-to-document citation grounding, tool choice, and latency.
 - Provide a FastAPI API, a small React evidence console, Docker Compose, and CI.
 
 ## Architecture
@@ -31,7 +31,7 @@ The frontend is a Vite React console with one issue form and one evidence view. 
 ## Success criteria
 
 - A fresh checkout can run backend tests, frontend rendered tests, builds, and the offline evaluation.
-- The demo diagnoses a fixed issue, shows at least two citations, a tool decision, approval state, and trace timing.
+- The demo diagnoses a fixed issue and shows relevant citations, executed tool results, approval state, and trace timing.
 - The evaluation command emits machine-readable JSON and fails when configured quality floors regress.
 - Docker Compose validates and starts the API plus frontend without requiring a model key.
 

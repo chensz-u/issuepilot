@@ -1,0 +1,30 @@
+[
+  {
+    "id": "windows-cache",
+    "title": "Install fails on Windows",
+    "body": "The wheel cache is locked during package installation",
+    "expected_document_id": "cache-resolution",
+    "expected_tools": ["search_similar_issues"]
+  },
+  {
+    "id": "python-version",
+    "title": "Version 2 startup failure",
+    "body": "Python 3.11 is rejected as unsupported",
+    "expected_document_id": "version-docs",
+    "expected_tools": ["search_similar_issues", "get_repository_context"]
+  },
+  {
+    "id": "config-rename",
+    "title": "Version 3 cannot read server.host",
+    "body": "Startup says the old configuration key is unknown",
+    "expected_document_id": "config-resolution",
+    "expected_tools": ["search_similar_issues", "get_repository_context"]
+  },
+  {
+    "id": "auth-401",
+    "title": "GitHub request returns 401",
+    "body": "The repository API rejects the credential as unauthorized",
+    "expected_document_id": "auth-docs",
+    "expected_tools": ["search_similar_issues"]
+  }
+]

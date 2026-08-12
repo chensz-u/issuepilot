@@ -1,0 +1,8 @@
+{
+  "benchmark": "synthetic-v1",
+  "case_count": 4,
+  "retrieval_hit_at_2": 1.0,
+  "citation_grounding_rate": 1.0,
+  "tool_selection_accuracy": 1.0,
+  "generation_mode": "deterministic_fallback"
+}

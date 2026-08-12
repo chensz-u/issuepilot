@@ -1,0 +1,37 @@
+[
+  {
+    "id": "cache-resolution",
+    "title": "Windows wheel cache lock",
+    "text": "Close processes holding wheel files, clear only the package-manager cache, and retry the locked installation.",
+    "source_url": "https://github.com/chenyi-c/issuepilot/blob/main/data/demo_documents.json",
+    "kind": "resolved_issue"
+  },
+  {
+    "id": "version-docs",
+    "title": "Supported Python versions",
+    "text": "Version 2 requires Python 3.12 or newer. Confirm the active interpreter before upgrading.",
+    "source_url": "https://github.com/chenyi-c/issuepilot/blob/main/data/demo_documents.json",
+    "kind": "documentation"
+  },
+  {
+    "id": "config-resolution",
+    "title": "Configuration key rename",
+    "text": "Version 3 renamed server.host to api.host. Replace the old environment key before startup.",
+    "source_url": "https://github.com/chenyi-c/issuepilot/blob/main/data/demo_documents.json",
+    "kind": "resolved_issue"
+  },
+  {
+    "id": "auth-docs",
+    "title": "Authentication troubleshooting",
+    "text": "A 401 response means the credential is missing, expired, or scoped for another repository. Never include the token in an issue.",
+    "source_url": "https://github.com/chenyi-c/issuepilot/blob/main/data/demo_documents.json",
+    "kind": "documentation"
+  },
+  {
+    "id": "lockfile-docs",
+    "title": "Repeatable dependency installs",
+    "text": "Use the committed lock file and a clean environment to distinguish dependency drift from application defects.",
+    "source_url": "https://github.com/chenyi-c/issuepilot/blob/main/data/demo_documents.json",
+    "kind": "documentation"
+  }
+]

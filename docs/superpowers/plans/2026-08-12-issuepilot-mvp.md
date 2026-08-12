@@ -12,36 +12,36 @@
 
 ### Task 1: Repository baseline
 
-- [ ] Add Python and frontend manifests, README, environment example, and fixture provenance.
-- [ ] Verify dependency installation and empty test runners.
-- [ ] Commit the baseline.
+- [x] Add Python and frontend manifests, README, environment example, and fixture provenance.
+- [x] Verify dependency installation and empty test runners.
+- [x] Commit the baseline.
 
 ### Task 2: Retrieval and ingestion core
 
-- [ ] Write failing tests for tokenization, hybrid ranking, duplicate handling, and bounded GitHub imports.
-- [ ] Implement domain types, SQLite repository, hybrid retrieval, and read-only GitHub client.
-- [ ] Run focused tests and commit.
+- [x] Write failing tests for tokenization, hybrid ranking, duplicate handling, and bounded GitHub imports.
+- [x] Implement domain types, SQLite repository, hybrid retrieval, and read-only GitHub client.
+- [x] Run focused tests and commit.
 
 ### Task 3: Diagnosis, approval, and traces
 
-- [ ] Write failing tests for citation grounding, tool allowlists, fallback labeling, approvals, and redacted traces.
-- [ ] Implement the deterministic workflow and optional provider boundary.
-- [ ] Run focused tests and commit.
+- [x] Write failing tests for citation grounding, tool allowlists, fallback labeling, approvals, and redacted traces.
+- [x] Implement the deterministic workflow and optional provider boundary.
+- [x] Run focused tests and commit.
 
 ### Task 4: API and evidence console
 
-- [ ] Write failing API and rendered component tests.
-- [ ] Implement FastAPI routes and the React evidence console.
-- [ ] Run backend/frontend tests and builds, then commit.
+- [x] Write failing API and rendered component tests.
+- [x] Implement FastAPI routes and the React evidence console.
+- [x] Run backend/frontend tests and builds, then commit.
 
 ### Task 5: Evaluation and delivery
 
-- [ ] Write failing evaluation threshold and reproducibility tests.
-- [ ] Add the synthetic benchmark, JSON report, Docker files, CI, and 90-second demo guide.
-- [ ] Run full verification, inspect scope, and commit.
+- [x] Write failing evaluation threshold and reproducibility tests.
+- [x] Add the synthetic benchmark, JSON report, Docker files, CI, and 90-second demo guide.
+- [x] Run full verification, inspect scope, and commit.
 
 ### Task 6: Publish
 
-- [ ] Create the public GitHub repository, push the implementation branch, and open a draft PR.
-- [ ] Confirm CI and public evidence links.
+- [x] Create the public GitHub repository, push the implementation branch, and open a draft PR.
+- [x] Confirm CI and public evidence links.
 

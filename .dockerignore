@@ -1,0 +1,10 @@
+.git
+.worktrees
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+frontend
+tests
+artifacts
+*.db
