@@ -27,6 +27,15 @@ type InvestigationStep = {
   status: "proposed";
 };
 
+type QualityAssessment = {
+  risk_level: "low" | "medium" | "high";
+  supported_evidence_count: number;
+  rejected_evidence_count: number;
+  tool_error_count: number;
+  approval_allowed: boolean;
+  checks: { id: string; passed: boolean; detail: string }[];
+};
+
 export type Investigation = {
   id: string;
   repository: { owner: string; name: string };
@@ -36,6 +45,7 @@ export type Investigation = {
   evidence: EvidenceArtifact[];
   hypotheses: Hypothesis[];
   plan: InvestigationStep[];
+  quality: QualityAssessment | null;
   draft: string;
   publishable_comment: string | null;
   published: boolean;
@@ -147,7 +157,7 @@ export function App({
   return (
     <main>
       <header className="hero">
-        <p className="eyebrow">V3 · SOURCE-AWARE GITHUB INVESTIGATION AGENT</p>
+        <p className="eyebrow">V4 · AUDITABLE GITHUB INVESTIGATION AGENT</p>
         <h1>IssuePilot</h1>
         <p className="lede">
           Investigate repository failures through allowlisted GitHub tools, replayable evidence,
@@ -201,9 +211,11 @@ function InvestigationView({ result, events, loading, onDecide }: {
       <section><h3>Hypotheses</h3><ol className="hypotheses">{result.hypotheses.map((item) => <li key={item.id}><strong>{item.status}</strong><span>{item.statement}</span></li>)}</ol></section>
       <section><h3>GitHub evidence</h3><ol className="citations">{result.evidence.map((item) => <li key={item.id}><a href={item.source_url} target="_blank" rel="noreferrer">{item.title}</a><code>{item.tool}</code><p>{item.preview}</p></li>)}</ol></section>
       <section><h3>Verification plan</h3><ol className="citations">{result.plan.map((step) => <li key={step.id}><strong>{step.title}</strong><code>{step.command.join(" ")}</code><p>{step.rationale}</p></li>)}</ol></section>
+      {result.quality ? <section><h3>Quality policy</h3><p className="approval">{result.quality.risk_level.toUpperCase()} RISK</p><ol className="trace-spans">{result.quality.checks.map((check) => <li key={check.id}>{check.passed ? "PASS" : "REVIEW"} · {check.detail}</li>)}</ol></section> : null}
       <article className="draft"><h3>Cited draft</h3><pre>{result.draft}</pre></article>
       <section><h3>Replayable trajectory</h3><ol className="trace-spans">{events.map((event) => <li key={event.sequence}>{String(event.sequence).padStart(2, "0")} · {event.name}</li>)}</ol></section>
-      {result.status === "awaiting_approval" ? <div className="decision-row"><button type="button" disabled={loading} onClick={() => onDecide("approve")}>Approve evidence draft</button><button className="secondary" type="button" disabled={loading} onClick={() => onDecide("reject")}>Reject draft</button></div> : null}
+      {result.status === "awaiting_approval" ? <div className="decision-row">{result.quality?.approval_allowed !== false ? <button type="button" disabled={loading} onClick={() => onDecide("approve")}>Approve evidence draft</button> : null}<button className="secondary" type="button" disabled={loading} onClick={() => onDecide("reject")}>Reject draft</button></div> : null}
+      <a className="secondary" href={`/api/investigations/${result.id}/audit.zip`} download>Download audit bundle</a>
       <p className="trace-id">THREAD / {result.id} · PUBLISHED / {String(result.published)}</p>
     </div>
   );

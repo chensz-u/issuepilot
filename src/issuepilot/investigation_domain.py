@@ -64,6 +64,21 @@ class InvestigationStep(BaseModel):
     status: Literal["proposed"] = "proposed"
 
 
+class QualityCheck(BaseModel):
+    id: Literal["grounded_evidence", "multiple_sources", "tool_health"]
+    passed: bool
+    detail: str
+
+
+class QualityAssessment(BaseModel):
+    risk_level: Literal["low", "medium", "high"]
+    supported_evidence_count: int = Field(ge=0)
+    rejected_evidence_count: int = Field(ge=0)
+    tool_error_count: int = Field(ge=0)
+    approval_allowed: bool
+    checks: tuple[QualityCheck, ...]
+
+
 class Investigation(BaseModel):
     id: str
     repository: RepositoryRef
@@ -73,6 +88,7 @@ class Investigation(BaseModel):
     evidence: tuple[EvidenceArtifact, ...] = ()
     hypotheses: tuple[Hypothesis, ...] = ()
     plan: tuple[InvestigationStep, ...] = ()
+    quality: QualityAssessment | None = None
     draft: str = ""
     publishable_comment: str | None = None
     published: bool = False

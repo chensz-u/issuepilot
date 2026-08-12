@@ -1,14 +1,14 @@
-# IssuePilot V3
+# IssuePilot V4
 
 Durable, evidence-first GitHub repository investigation agent for an AI application/backend portfolio.
 
-IssuePilot accepts a repository and failure report, executes five allowlisted GitHub read tools, forms explicit hypotheses, produces a document-id-cited draft and an evidence-linked verification plan, then pauses at a durable human approval checkpoint. The same investigation can be reloaded and resumed after the API process restarts. It never executes the proposed commands, clones a repository, changes GitHub state, or publishes a comment.
+IssuePilot accepts one or a bounded batch of repository failure reports, executes five allowlisted GitHub read tools, forms explicit hypotheses, scores evidence risk, produces a cited draft and verification plan, then pauses at a durable human approval checkpoint. Every result can be exported as a deterministic, hash-verifiable audit bundle. It never executes proposed commands, clones a repository, changes GitHub state, or publishes a comment.
 
-## What makes V3 an agent system
+## What makes V4 an agent system
 
 | Capability | Verifiable implementation |
 | --- | --- |
-| Stateful workflow | LangGraph nodes: validate → tools → hypothesize → plan → synthesize → approval interrupt |
+| Stateful workflow | LangGraph nodes: validate → tools → hypothesize → plan → assess → synthesize → approval interrupt |
 | Durable execution | `langgraph-checkpoint-sqlite`; restart/resume is covered by an automated test |
 | Real tools | Fixed GitHub REST calls for README, issues, failed Actions runs, commits, and bounded relevant source files |
 | Evidence discipline | Every observation has an id, source URL, bounded preview, and originating tool |
@@ -16,9 +16,13 @@ IssuePilot accepts a repository and failure report, executes five allowlisted Gi
 | Replay | Ordered append-only events exposed as SSE and rendered in the React trajectory |
 | Retrieval | Apache-2.0 `rank-bm25` supplies BM25Plus; deterministic vector reranking remains explicit |
 | Verification plan | Evidence-linked argv steps are proposed for a human to run; IssuePilot executes none of them |
-| Evaluation | Five-case synthetic gate checks recall, distractor precision, hypotheses, exact citations, plan grounding, ordered trajectory, and approval safety |
+| Quality policy | Explicit grounded-evidence, multiple-source, and tool-health checks produce a low/medium/high review risk |
+| Operations | Batch intake is capped at five; deterministic ZIP exports include projection, ordered events, and SHA-256 manifest |
+| Evaluation | Six-case synthetic gate checks recall, precision, hypotheses, citations, plan grounding, quality policy, trajectory, and approval safety |
 
-The latest V3 result is [`docs/evidence/investigation-evaluation.json`](docs/evidence/investigation-evaluation.json). All seven metrics, including relevance precision and exact plan grounding against source/distractor cases, are `1.0` on the committed synthetic regression fixture. That is a reproducibility claim, not production accuracy.
+The latest V4 result is [`docs/evidence/investigation-evaluation.json`](docs/evidence/investigation-evaluation.json). All eight metrics, including exact plan grounding and policy accuracy against source/distractor cases, are `1.0` on the committed synthetic regression fixture. That is a reproducibility claim, not production accuracy.
+
+The portfolio acceptance screenshot is [`docs/assets/issuepilot-v4.png`](docs/assets/issuepilot-v4.png), captured from a real browser after a live read-only investigation of this public repository.
 
 ## Open-source foundations
 
@@ -55,16 +59,20 @@ npm ci
 npm run dev
 ```
 
-## V2 API
+## V4 API
 
 ```text
 POST /api/investigations                  start and checkpoint a repository investigation
+POST /api/investigations/batch            start 1-5 independently checkpointed investigations
 GET  /api/investigations/{id}             reload its durable projection
 GET  /api/investigations/{id}/events      replay ordered SSE trajectory events
+GET  /api/investigations/{id}/audit.zip   export deterministic evidence and SHA-256 manifest
 POST /api/investigations/{id}/approval    resume with approve or reject
 ```
 
 The V1 diagnosis endpoints remain available for compatibility and comparison.
+
+Audit bundles include the user-supplied title and body. Their manifest sets `contains_user_input: true`; inspect a bundle before sharing it outside the intended review context.
 
 ## Quality gates
 

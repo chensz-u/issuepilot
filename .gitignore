@@ -7,6 +7,10 @@ __pycache__/
 .env
 node_modules/
 frontend/dist/
+output/
+.playwright-cli/
+issuepilot-checkpoints.db-shm
+issuepilot-checkpoints.db-wal
 *.tsbuildinfo
 .worktrees/
 artifacts/

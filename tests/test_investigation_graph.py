@@ -48,6 +48,36 @@ def test_expired_owner_is_fenced_from_saving_projection(tmp_path: Path) -> None:
         store.save(investigation, "old-owner")
 
 
+def test_quality_policy_requires_distinct_supporting_tools_for_low_risk() -> None:
+    state = {
+        "evidence": [
+            {
+                "id": f"issue-{number}",
+                "kind": "issue",
+                "title": f"Cache issue {number}",
+                "preview": "cache lock",
+                "source_url": f"https://github.com/acme/widget/issues/{number}",
+                "tool": "search_issues",
+            }
+            for number in (1, 2)
+        ],
+        "hypotheses": [
+            {
+                "id": f"hypothesis-{number}",
+                "statement": "Cache evidence",
+                "status": "supported",
+                "evidence_ids": [f"issue-{number}"],
+            }
+            for number in (1, 2)
+        ],
+    }
+
+    quality = InvestigationService._assess(state)["quality"]
+
+    assert quality["risk_level"] == "medium"
+    assert quality["checks"][1]["passed"] is False
+
+
 class FakeTools:
     names = ("search_issues", "inspect_failed_workflows")
 
@@ -101,6 +131,9 @@ async def test_investigation_pauses_and_resumes_after_service_restart(tmp_path: 
     assert awaiting.plan
     assert all(step.evidence_ids for step in awaiting.plan)
     assert any(step.command == ("python", "-m", "pytest", "-q") for step in awaiting.plan)
+    assert awaiting.quality is not None
+    assert awaiting.quality.risk_level == "low"
+    assert awaiting.quality.approval_allowed is True
 
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
         restarted = InvestigationService(
@@ -140,6 +173,9 @@ async def test_no_evidence_blocks_investigation_approval(tmp_path: Path) -> None
 
         assert result.status == "insufficient_evidence"
         assert result.hypotheses[0].status == "insufficient_evidence"
+        assert result.quality is not None
+        assert result.quality.risk_level == "high"
+        assert result.quality.approval_allowed is False
         with pytest.raises(ValueError, match="cannot be approved"):
             await service.decide(result.id, "approve")
 
@@ -274,6 +310,67 @@ async def test_same_terminal_decision_is_idempotent(tmp_path: Path) -> None:
         assert [event.name for event in service.store.list_events(awaiting.id)].count(
             "approval"
         ) == 1
+
+
+@pytest.mark.asyncio
+async def test_quality_policy_blocks_approval_when_any_tool_failed(tmp_path: Path) -> None:
+    class PartiallyFailedTools:
+        names = ("search_issues", "inspect_source_code")
+
+        async def execute(
+            self, name: str, repository: RepositoryRef, query: str
+        ) -> list[EvidenceArtifact]:
+            if name == "inspect_source_code":
+                return [
+                    EvidenceArtifact(
+                        id="error-source",
+                        kind="error",
+                        title="source unavailable",
+                        preview="GitHub returned HTTP 403",
+                        source_url="https://github.com/acme/widget",
+                        tool=name,
+                    )
+                ]
+            return [
+                EvidenceArtifact(
+                    id="issue-7",
+                    kind="issue",
+                    title="Cache lock repair",
+                    preview="Stop the worker before clearing the locked cache.",
+                    source_url="https://github.com/acme/widget/issues/7",
+                    tool=name,
+                )
+            ]
+
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "checkpoint.db")) as checkpointer:
+        service = InvestigationService(
+            checkpointer,
+            InvestigationStore(tmp_path / "projection.db"),
+            PartiallyFailedTools(),
+        )
+        awaiting = await service.start("acme/widget", "Cache lock", "CI cache lock failure")
+
+        assert awaiting.status == "awaiting_approval"
+        assert awaiting.quality is not None
+        assert awaiting.quality.approval_allowed is False
+        with pytest.raises(ValueError, match="quality policy"):
+            await service.decide(awaiting.id, "approve")
+        rejected = await service.decide(awaiting.id, "reject")
+
+    assert rejected.status == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_legacy_projection_without_quality_remains_approvable(tmp_path: Path) -> None:
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "checkpoint.db")) as checkpointer:
+        store = InvestigationStore(tmp_path / "projection.db")
+        service = InvestigationService(checkpointer, store, FakeTools())
+        awaiting = await service.start("acme/widget", "Cache lock", "CI cache lock failure")
+        store.save(awaiting.model_copy(update={"quality": None}))
+
+        approved = await service.decide(awaiting.id, "approve")
+
+    assert approved.status == "approved"
 
 
 @pytest.mark.asyncio

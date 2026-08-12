@@ -10,9 +10,10 @@ from fastapi.responses import Response
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel, Field, ValidationError
 
+from issuepilot.audit_bundle import build_audit_bundle
 from issuepilot.domain import Approval, DiagnoseRequest, DiagnosisResult, KnowledgeDocument
 from issuepilot.generator import OpenAIResponsesGenerator
-from issuepilot.investigation_domain import Investigation
+from issuepilot.investigation_domain import Investigation, RepositoryRef
 from issuepilot.investigation_graph import InvestigationService
 from issuepilot.investigation_store import InvestigationStore
 from issuepilot.investigation_tools import GitHubEvidenceClient, InvestigationToolRegistry
@@ -32,6 +33,10 @@ class InvestigationRequest(BaseModel):
 
 class ApprovalDecision(BaseModel):
     decision: str
+
+
+class BatchInvestigationRequest(BaseModel):
+    items: list[InvestigationRequest] = Field(min_length=1, max_length=5)
 
 
 def create_app(
@@ -61,7 +66,7 @@ def create_app(
             yield
         await connection.close()
 
-    app = FastAPI(title="IssuePilot", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="IssuePilot", version="0.4.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://localhost:8080"],
@@ -107,6 +112,20 @@ def create_app(
         except ValidationError as error:
             raise HTTPException(status_code=422, detail="repository must be owner/name") from error
 
+    @app.post("/api/investigations/batch", response_model=list[Investigation], status_code=201)
+    async def start_investigation_batch(
+        request: BatchInvestigationRequest,
+    ) -> list[Investigation]:
+        try:
+            for item in request.items:
+                RepositoryRef.parse(item.repository)
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail="repository must be owner/name") from error
+        return [
+            await investigations().start(item.repository, item.title, item.body)
+            for item in request.items
+        ]
+
     @app.get("/api/investigations/{investigation_id}", response_model=Investigation)
     async def get_investigation(investigation_id: str) -> Investigation:
         try:
@@ -127,6 +146,23 @@ def create_app(
             for event in events
         )
         return Response(content=payload, media_type="text/event-stream")
+
+    @app.get("/api/investigations/{investigation_id}/audit.zip")
+    async def get_investigation_audit(investigation_id: str) -> Response:
+        try:
+            investigation = investigations().store.get(investigation_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="Investigation not found") from error
+        payload = build_audit_bundle(
+            investigation, investigations().store.list_events(investigation_id)
+        )
+        return Response(
+            content=payload,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="issuepilot-{investigation_id}.zip"'
+            },
+        )
 
     @app.post("/api/investigations/{investigation_id}/approval", response_model=Investigation)
     async def decide_investigation(

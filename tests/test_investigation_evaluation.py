@@ -30,6 +30,26 @@ async def test_investigation_evaluation_measures_full_evidence_chain() -> None:
             ],
             expected_evidence_ids=("issue-7",),
             expected_hypothesis_statuses={"issue-7": "supported"},
+            expected_quality={
+                "risk_level": "medium",
+                "supported_evidence_count": 1,
+                "rejected_evidence_count": 0,
+                "tool_error_count": 0,
+                "approval_allowed": True,
+                "checks": [
+                    {
+                        "id": "grounded_evidence",
+                        "passed": True,
+                        "detail": "1 supported evidence artifact(s)",
+                    },
+                    {
+                        "id": "multiple_sources",
+                        "passed": False,
+                        "detail": "1 distinct evidence tool(s) support the draft.",
+                    },
+                    {"id": "tool_health", "passed": True, "detail": "0 tool error artifact(s)"},
+                ],
+            },
         ),
         InvestigationBenchmarkCase(
             id="none",
@@ -39,6 +59,26 @@ async def test_investigation_evaluation_measures_full_evidence_chain() -> None:
             evidence=[],
             expected_evidence_ids=(),
             expected_hypothesis_statuses={},
+            expected_quality={
+                "risk_level": "high",
+                "supported_evidence_count": 0,
+                "rejected_evidence_count": 0,
+                "tool_error_count": 0,
+                "approval_allowed": False,
+                "checks": [
+                    {
+                        "id": "grounded_evidence",
+                        "passed": False,
+                        "detail": "0 supported evidence artifact(s)",
+                    },
+                    {
+                        "id": "multiple_sources",
+                        "passed": False,
+                        "detail": "0 distinct evidence tool(s) support the draft.",
+                    },
+                    {"id": "tool_health", "passed": True, "detail": "0 tool error artifact(s)"},
+                ],
+            },
         ),
     ]
 
@@ -49,6 +89,7 @@ async def test_investigation_evaluation_measures_full_evidence_chain() -> None:
     assert report.hypothesis_support_rate == 1.0
     assert report.citation_grounding_rate == 1.0
     assert report.plan_grounding_rate == 1.0
+    assert report.quality_policy_accuracy == 1.0
     assert report.trajectory_completeness == 1.0
     assert report.approval_safety == 1.0
     require_investigation_quality(report)
@@ -59,6 +100,7 @@ def test_committed_investigation_benchmark_is_not_trivial() -> None:
 
     assert len(cases) >= 5
     assert any(not case["expected_evidence_ids"] for case in cases)
+    assert any(any(item["kind"] == "error" for item in case["evidence"]) for case in cases)
     assert all(
         any(status == "rejected" for status in case["expected_hypothesis_statuses"].values())
         for case in cases

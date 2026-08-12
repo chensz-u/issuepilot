@@ -9,7 +9,7 @@ from typing import Literal
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel
 
-from issuepilot.investigation_domain import EvidenceArtifact, RepositoryRef
+from issuepilot.investigation_domain import EvidenceArtifact, QualityAssessment, RepositoryRef
 from issuepilot.investigation_graph import InvestigationService
 from issuepilot.investigation_store import InvestigationStore
 
@@ -22,6 +22,7 @@ class InvestigationBenchmarkCase(BaseModel):
     evidence: list[EvidenceArtifact]
     expected_evidence_ids: tuple[str, ...]
     expected_hypothesis_statuses: dict[str, Literal["supported", "rejected"]]
+    expected_quality: QualityAssessment
 
 
 class InvestigationEvaluationReport(BaseModel):
@@ -32,6 +33,7 @@ class InvestigationEvaluationReport(BaseModel):
     hypothesis_support_rate: float
     citation_grounding_rate: float
     plan_grounding_rate: float
+    quality_policy_accuracy: float
     trajectory_completeness: float
     approval_safety: float
 
@@ -57,7 +59,7 @@ async def evaluate_investigations(
 ) -> InvestigationEvaluationReport:
     if not cases:
         raise ValueError("benchmark requires at least one case")
-    recall = precision = support = grounding = plan_grounding = trajectory = safety = 0
+    recall = precision = support = grounding = plan_grounding = quality = trajectory = safety = 0
     with tempfile.TemporaryDirectory(prefix="issuepilot-eval-") as directory:
         root = Path(directory)
         for index, case in enumerate(cases):
@@ -96,18 +98,39 @@ async def evaluate_investigations(
                     if expected_ids
                     else not result.plan
                 )
+                quality += result.quality == case.expected_quality
+                events = store.list_events(result.id)
                 if expected_ids:
-                    safety += result.status == "awaiting_approval"
+                    if case.expected_quality.approval_allowed:
+                        decided = await service.decide(result.id, "approve")
+                        safety += (
+                            result.status == "awaiting_approval" and decided.status == "approved"
+                        )
+                    else:
+                        try:
+                            await service.decide(result.id, "approve")
+                        except ValueError:
+                            decided = await service.decide(result.id, "reject")
+                            safety += (
+                                result.status == "awaiting_approval"
+                                and decided.status == "rejected"
+                            )
                     required_events = [
                         "validate",
                         "tools",
                         "hypothesize",
                         "plan",
+                        "assess",
                         "synthesize",
                         "awaiting_approval",
                     ]
                 else:
-                    safety += (
+                    blocked = False
+                    try:
+                        await service.decide(result.id, "approve")
+                    except ValueError:
+                        blocked = True
+                    safety += blocked and (
                         result.status == "insufficient_evidence"
                         and "No grounded repository evidence" in result.draft
                         and any(
@@ -115,8 +138,14 @@ async def evaluate_investigations(
                             for hypothesis in result.hypotheses
                         )
                     )
-                    required_events = ["validate", "tools", "hypothesize", "plan", "synthesize"]
-                events = store.list_events(result.id)
+                    required_events = [
+                        "validate",
+                        "tools",
+                        "hypothesize",
+                        "plan",
+                        "assess",
+                        "synthesize",
+                    ]
                 trajectory += [event.name for event in events] == required_events and [
                     event.sequence for event in events
                 ] == list(range(1, len(events) + 1))
@@ -128,6 +157,7 @@ async def evaluate_investigations(
         hypothesis_support_rate=round(support / count, 4),
         citation_grounding_rate=round(grounding / count, 4),
         plan_grounding_rate=round(plan_grounding / count, 4),
+        quality_policy_accuracy=round(quality / count, 4),
         trajectory_completeness=round(trajectory / count, 4),
         approval_safety=round(safety / count, 4),
     )
@@ -140,6 +170,7 @@ def require_investigation_quality(report: InvestigationEvaluationReport) -> None
         "hypothesis_support_rate",
         "citation_grounding_rate",
         "plan_grounding_rate",
+        "quality_policy_accuracy",
         "trajectory_completeness",
         "approval_safety",
     )

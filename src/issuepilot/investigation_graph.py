@@ -12,6 +12,8 @@ from issuepilot.investigation_domain import (
     Hypothesis,
     Investigation,
     InvestigationStep,
+    QualityAssessment,
+    QualityCheck,
     RepositoryRef,
 )
 from issuepilot.investigation_store import InvestigationStore
@@ -35,6 +37,7 @@ class InvestigationState(TypedDict, total=False):
     evidence: list[dict[str, Any]]
     hypotheses: list[dict[str, Any]]
     plan: list[dict[str, Any]]
+    quality: dict[str, Any] | None
     draft: str
     publishable_comment: str | None
     published: bool
@@ -54,13 +57,15 @@ class InvestigationService:
         builder.add_node("tools", self._execute_tools)
         builder.add_node("hypothesize", self._hypothesize)
         builder.add_node("plan", self._plan)
+        builder.add_node("assess", self._assess)
         builder.add_node("synthesize", self._synthesize)
         builder.add_node("approval", self._approval)
         builder.add_edge(START, "validate")
         builder.add_edge("validate", "tools")
         builder.add_edge("tools", "hypothesize")
         builder.add_edge("hypothesize", "plan")
-        builder.add_edge("plan", "synthesize")
+        builder.add_edge("plan", "assess")
+        builder.add_edge("assess", "synthesize")
         builder.add_conditional_edges(
             "synthesize",
             lambda state: "stop" if state["status"] == "insufficient_evidence" else "review",
@@ -81,6 +86,7 @@ class InvestigationService:
             "evidence": [],
             "hypotheses": [],
             "plan": [],
+            "quality": None,
             "draft": "",
             "publishable_comment": None,
             "published": False,
@@ -94,6 +100,12 @@ class InvestigationService:
         current = self.store.get(investigation_id)
         if current.status == "insufficient_evidence":
             raise ValueError("investigation without grounded evidence cannot be approved")
+        if (
+            decision == "approve"
+            and current.quality is not None
+            and not current.quality.approval_allowed
+        ):
+            raise ValueError("investigation quality policy blocks approval")
         terminal_decision = {"approved": "approve", "rejected": "reject"}.get(current.status)
         if terminal_decision == decision:
             return current
@@ -234,6 +246,52 @@ class InvestigationService:
         return {"plan": [item.model_dump(mode="json") for item in steps]}
 
     @staticmethod
+    def _assess(state: InvestigationState) -> InvestigationState:
+        evidence = [EvidenceArtifact.model_validate(item) for item in state["evidence"]]
+        hypotheses = [Hypothesis.model_validate(item) for item in state["hypotheses"]]
+        supported_ids = {
+            evidence_id
+            for hypothesis in hypotheses
+            if hypothesis.status == "supported"
+            for evidence_id in hypothesis.evidence_ids
+        }
+        supported_count = len(supported_ids)
+        supported_tool_count = len({item.tool for item in evidence if item.id in supported_ids})
+        rejected_count = sum(item.status == "rejected" for item in hypotheses)
+        error_count = sum(item.kind == "error" for item in evidence)
+        if supported_count == 0:
+            risk_level = "high"
+        elif supported_tool_count < 2 or error_count:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+        quality = QualityAssessment(
+            risk_level=risk_level,
+            supported_evidence_count=supported_count,
+            rejected_evidence_count=rejected_count,
+            tool_error_count=error_count,
+            approval_allowed=supported_count > 0 and error_count == 0,
+            checks=(
+                QualityCheck(
+                    id="grounded_evidence",
+                    passed=supported_count > 0,
+                    detail=f"{supported_count} supported evidence artifact(s)",
+                ),
+                QualityCheck(
+                    id="multiple_sources",
+                    passed=supported_tool_count >= 2,
+                    detail=f"{supported_tool_count} distinct evidence tool(s) support the draft.",
+                ),
+                QualityCheck(
+                    id="tool_health",
+                    passed=error_count == 0,
+                    detail=f"{error_count} tool error artifact(s)",
+                ),
+            ),
+        )
+        return {"quality": quality.model_dump(mode="json")}
+
+    @staticmethod
     def _synthesize(state: InvestigationState) -> InvestigationState:
         evidence = [EvidenceArtifact.model_validate(item) for item in state["evidence"]]
         hypotheses = [Hypothesis.model_validate(item) for item in state["hypotheses"]]
@@ -277,6 +335,9 @@ class InvestigationService:
             evidence=tuple(EvidenceArtifact.model_validate(item) for item in state["evidence"]),
             hypotheses=tuple(Hypothesis.model_validate(item) for item in state["hypotheses"]),
             plan=tuple(InvestigationStep.model_validate(item) for item in state.get("plan", [])),
+            quality=(
+                QualityAssessment.model_validate(state["quality"]) if state.get("quality") else None
+            ),
             draft=state["draft"],
             publishable_comment=state.get("publishable_comment"),
             published=state.get("published", False),
