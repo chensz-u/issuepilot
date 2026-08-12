@@ -1,0 +1,62 @@
+[
+  {
+    "id": "windows-cache-lock",
+    "repository": "acme/widget",
+    "title": "Windows cache lock",
+    "body": "The package cache is locked during CI installation",
+    "evidence": [
+      {"id":"issue-7","kind":"issue","title":"Cache lock repair","preview":"Stop the package worker before clearing only its locked cache.","source_url":"https://github.com/acme/widget/issues/7","tool":"search_issues"},
+      {"id":"commit-docs","kind":"commit","title":"Update printer guide","preview":"Document cyan toner replacement.","source_url":"https://github.com/acme/widget/commit/docs","tool":"inspect_recent_commits"}
+    ],
+    "expected_evidence_ids": ["issue-7"],
+    "expected_hypothesis_statuses": {"issue-7":"supported","commit-docs":"rejected"}
+  },
+  {
+    "id": "failed-workflow",
+    "repository": "acme/widget",
+    "title": "CI test job failed",
+    "body": "The latest workflow concludes with failure",
+    "evidence": [
+      {"id":"workflow-9","kind":"workflow","title":"CI workflow","preview":"Latest workflow conclusion: failure","source_url":"https://github.com/acme/widget/actions/runs/9","tool":"inspect_failed_workflows"},
+      {"id":"repository-readme","kind":"repository","title":"Widget README","preview":"Python async API setup guide.","source_url":"https://github.com/acme/widget#readme","tool":"read_repository_context"}
+    ],
+    "expected_evidence_ids": ["workflow-9"],
+    "expected_hypothesis_statuses": {"workflow-9":"supported","repository-readme":"rejected"}
+  },
+  {
+    "id": "recent-regression",
+    "repository": "acme/widget",
+    "title": "Regression after cache refactor",
+    "body": "The failure started after the latest cache ownership change",
+    "evidence": [
+      {"id":"commit-abcdef123456","kind":"commit","title":"refactor cache ownership","preview":"Latest cache ownership refactor","source_url":"https://github.com/acme/widget/commit/abcdef123456","tool":"inspect_recent_commits"},
+      {"id":"issue-printer","kind":"issue","title":"Printer setup","preview":"Install the black toner cartridge.","source_url":"https://github.com/acme/widget/issues/99","tool":"search_issues"}
+    ],
+    "expected_evidence_ids": ["commit-abcdef123456"],
+    "expected_hypothesis_statuses": {"commit-abcdef123456":"supported","issue-printer":"rejected"}
+  },
+  {
+    "id": "repository-context",
+    "repository": "acme/widget",
+    "title": "Unsupported runtime version",
+    "body": "Runtime version is rejected during setup",
+    "evidence": [
+      {"id":"repository-readme","kind":"repository","title":"Runtime version requirements","preview":"Runtime version Python 3.12 is required.","source_url":"https://github.com/acme/widget#readme","tool":"read_repository_context"},
+      {"id":"workflow-print","kind":"workflow","title":"Print labels","preview":"Generate warehouse shipping labels.","source_url":"https://github.com/acme/widget/actions/runs/10","tool":"inspect_failed_workflows"}
+    ],
+    "expected_evidence_ids": ["repository-readme"],
+    "expected_hypothesis_statuses": {"repository-readme":"supported","workflow-print":"rejected"}
+  },
+  {
+    "id": "unrelated-printer",
+    "repository": "acme/widget",
+    "title": "Printer toner jam",
+    "body": "Cyan cartridge is stuck",
+    "evidence": [
+      {"id":"repository-readme","kind":"repository","title":"Python runtime documentation","preview":"Python 3.12 supports async web servers.","source_url":"https://github.com/acme/widget#readme","tool":"read_repository_context"},
+      {"id":"commit-cache","kind":"commit","title":"Cache ownership refactor","preview":"Refactor package cache worker lifecycle.","source_url":"https://github.com/acme/widget/commit/cache","tool":"inspect_recent_commits"}
+    ],
+    "expected_evidence_ids": [],
+    "expected_hypothesis_statuses": {"repository-readme":"rejected","commit-cache":"rejected"}
+  }
+]

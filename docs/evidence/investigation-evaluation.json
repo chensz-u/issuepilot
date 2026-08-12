@@ -1,0 +1,10 @@
+{
+  "benchmark": "investigation-synthetic-v1",
+  "case_count": 5,
+  "evidence_recall": 1.0,
+  "relevance_precision": 1.0,
+  "hypothesis_support_rate": 1.0,
+  "citation_grounding_rate": 1.0,
+  "trajectory_completeness": 1.0,
+  "approval_safety": 1.0
+}

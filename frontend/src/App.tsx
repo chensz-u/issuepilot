@@ -2,170 +2,168 @@ import { type FormEvent, useState } from "react";
 
 import "./styles.css";
 
-type Citation = {
-  document_id: string;
+type EvidenceArtifact = {
+  id: string;
+  kind: "repository" | "issue" | "workflow" | "commit" | "error";
   title: string;
+  preview: string;
   source_url: string;
-  score: number;
+  tool: string;
 };
 
-type Approval = {
+type Hypothesis = {
   id: string;
-  status: "pending" | "approved" | "blocked";
+  statement: string;
+  status: "proposed" | "supported" | "rejected" | "insufficient_evidence";
+  evidence_ids: string[];
+};
+
+export type Investigation = {
+  id: string;
+  repository: { owner: string; name: string };
+  title: string;
+  body: string;
+  status: "running" | "awaiting_approval" | "approved" | "rejected" | "insufficient_evidence";
+  evidence: EvidenceArtifact[];
+  hypotheses: Hypothesis[];
+  draft: string;
   publishable_comment: string | null;
   published: boolean;
 };
 
-type ToolExecution = {
+type InvestigationEvent = {
+  sequence: number;
   name: string;
-  status: "completed";
-  summary: string;
+  payload: Record<string, unknown>;
 };
 
-type Trace = {
-  id: string;
-  mode: string;
-  spans: Array<{
-    name: string;
-    duration_ms: number;
-    attributes: Record<string, string | number | boolean>;
-  }>;
-};
+type StartInvestigation = (request: {
+  repository: string;
+  title: string;
+  body: string;
+}) => Promise<Investigation>;
+type ReplayEvents = (id: string) => Promise<InvestigationEvent[]>;
+type Decide = (id: string, decision: "approve" | "reject") => Promise<Investigation>;
 
-export type Diagnosis = {
-  draft: string;
-  mode: "deterministic_fallback" | "model";
-  citations: Citation[];
-  selected_tools: string[];
-  tool_executions: ToolExecution[];
-  approval: Approval;
-  trace_id: string;
-};
-
-type Diagnose = (request: { title: string; body: string }) => Promise<Diagnosis>;
-type GetTrace = (id: string) => Promise<Trace>;
-type Approve = (id: string) => Promise<Approval>;
-
-const defaultDiagnose: Diagnose = async (request) => {
-  const response = await fetch("/api/diagnoses", {
+const defaultStart: StartInvestigation = async (request) => {
+  const response = await fetch("/api/investigations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
-  if (!response.ok) throw new Error("Diagnosis request failed");
-  return response.json() as Promise<Diagnosis>;
+  if (!response.ok) throw new Error("Investigation request failed");
+  return response.json() as Promise<Investigation>;
 };
 
-const defaultGetTrace: GetTrace = async (id) => {
-  const response = await fetch(`/api/traces/${id}`);
-  if (!response.ok) throw new Error("Trace request failed");
-  return response.json() as Promise<Trace>;
+const defaultReplay: ReplayEvents = async (id) => {
+  const response = await fetch(`/api/investigations/${id}/events`);
+  if (!response.ok) throw new Error("Trajectory request failed");
+  const text = await response.text();
+  return text
+    .trim()
+    .split("\n\n")
+    .filter(Boolean)
+    .map((block) => {
+      const lines = Object.fromEntries(
+        block.split("\n").map((line) => {
+          const [key, ...value] = line.split(": ");
+          return [key, value.join(": ")];
+        }),
+      );
+      return {
+        sequence: Number(lines.id),
+        name: lines.event,
+        payload: JSON.parse(lines.data) as Record<string, unknown>,
+      };
+    });
 };
 
-const defaultApprove: Approve = async (id) => {
-  const response = await fetch(`/api/approvals/${id}`, { method: "POST" });
+const defaultDecide: Decide = async (id, decision) => {
+  const response = await fetch(`/api/investigations/${id}/approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
   if (!response.ok) throw new Error("Approval request failed");
-  return response.json() as Promise<Approval>;
+  return response.json() as Promise<Investigation>;
 };
 
 export function App({
-  diagnose = defaultDiagnose,
-  getTrace = defaultGetTrace,
-  approve = defaultApprove,
+  startInvestigation = defaultStart,
+  replayEvents = defaultReplay,
+  decide = defaultDecide,
 }: {
-  diagnose?: Diagnose;
-  getTrace?: GetTrace;
-  approve?: Approve;
+  startInvestigation?: StartInvestigation;
+  replayEvents?: ReplayEvents;
+  decide?: Decide;
 }) {
-  const [title, setTitle] = useState("Install fails on Windows");
-  const [body, setBody] = useState("Version 2 reports a locked package cache error");
-  const [result, setResult] = useState<Diagnosis | null>(null);
-  const [trace, setTrace] = useState<Trace | null>(null);
+  const [repository, setRepository] = useState("chenyi-c/issuepilot");
+  const [title, setTitle] = useState("Cache failure on Windows CI");
+  const [body, setBody] = useState("The package cache is locked during the install job.");
+  const [result, setResult] = useState<Investigation | null>(null);
+  const [events, setEvents] = useState<InvestigationEvent[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [approvalLoading, setApprovalLoading] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const diagnosis = await diagnose({ title, body });
-      setResult(diagnosis);
-      setTrace(await getTrace(diagnosis.trace_id));
+      const investigation = await startInvestigation({ repository, title, body });
+      setResult(investigation);
+      setEvents(await replayEvents(investigation.id));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Diagnosis request failed");
+      setError(caught instanceof Error ? caught.message : "Investigation request failed");
     } finally {
       setLoading(false);
     }
   }
 
-  async function approveDraft() {
+  async function decideInvestigation(decision: "approve" | "reject") {
     if (!result) return;
-    setApprovalLoading(true);
+    setLoading(true);
     setError("");
     try {
-      const approval = await approve(result.approval.id);
-      setResult({ ...result, approval });
+      setResult(await decide(result.id, decision));
+      setEvents(await replayEvents(result.id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Approval request failed");
     } finally {
-      setApprovalLoading(false);
+      setLoading(false);
     }
   }
 
   return (
     <main>
       <header className="hero">
-        <p className="eyebrow">EVIDENCE-FIRST ISSUE COPILOT</p>
+        <p className="eyebrow">DURABLE GITHUB INVESTIGATION AGENT</p>
         <h1>IssuePilot</h1>
         <p className="lede">
-          Diagnose public GitHub issues with grounded retrieval, controlled tools, human approval,
-          and inspectable traces.
+          Investigate repository failures through allowlisted GitHub tools, replayable evidence,
+          durable checkpoints, and explicit human decisions.
         </p>
       </header>
 
       <section className="workspace">
         <form className="panel form-panel" onSubmit={submit}>
-          <div className="panel-heading">
-            <span>01</span>
-            <h2>Issue intake</h2>
-          </div>
+          <div className="panel-heading"><span>01</span><h2>Repository intake</h2></div>
+          <label htmlFor="repository">Repository</label>
+          <input id="repository" value={repository} onChange={(event) => setRepository(event.target.value)} required />
           <label htmlFor="issue-title">Issue title</label>
-          <input
-            id="issue-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            minLength={3}
-            required
-          />
-          <label htmlFor="issue-body">Issue details</label>
-          <textarea
-            id="issue-body"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            minLength={3}
-            rows={8}
-            required
-          />
-          <button disabled={loading}>{loading ? "Tracing…" : "Run diagnosis"}</button>
+          <input id="issue-title" value={title} onChange={(event) => setTitle(event.target.value)} minLength={3} required />
+          <label htmlFor="issue-body">Failure details</label>
+          <textarea id="issue-body" value={body} onChange={(event) => setBody(event.target.value)} minLength={3} rows={8} required />
+          <button disabled={loading}>{loading ? "Investigating…" : "Start investigation"}</button>
           {error ? <p className="error">{error}</p> : null}
         </form>
 
         <section className="panel evidence-panel" aria-live="polite">
-          <div className="panel-heading">
-            <span>02</span>
-            <h2>Evidence trace</h2>
-          </div>
+          <div className="panel-heading"><span>02</span><h2>Investigation trajectory</h2></div>
           {result ? (
-            <Evidence
-              result={result}
-              trace={trace}
-              onApprove={approveDraft}
-              approvalLoading={approvalLoading}
-            />
+            <InvestigationView result={result} events={events} loading={loading} onDecide={decideInvestigation} />
           ) : (
-            <EmptyState />
+            <div className="empty"><div className="signal" /><p>Start a repository investigation to reveal hypotheses, tool evidence, checkpoints, and approval state.</p></div>
           )}
         </section>
       </section>
@@ -173,86 +171,29 @@ export function App({
   );
 }
 
-function Evidence({
-  result,
-  trace,
-  onApprove,
-  approvalLoading,
-}: {
-  result: Diagnosis;
-  trace: Trace | null;
-  onApprove: () => void;
-  approvalLoading: boolean;
-}) {
-  const approvalLabel = {
-    pending: "Pending human approval",
-    approved: "Human approved",
-    blocked: "Approval blocked: no grounded evidence",
-  }[result.approval.status];
+const STATUS_LABELS: Record<Investigation["status"], string> = {
+  running: "Investigation running",
+  awaiting_approval: "Awaiting human approval",
+  approved: "Human approved",
+  rejected: "Human rejected",
+  insufficient_evidence: "Approval blocked: insufficient evidence",
+};
 
+function InvestigationView({ result, events, loading, onDecide }: {
+  result: Investigation;
+  events: InvestigationEvent[];
+  loading: boolean;
+  onDecide: (decision: "approve" | "reject") => void;
+}) {
   return (
     <div className="evidence-stack">
-      <div className="status-row">
-        <span className="mode">
-          {result.mode === "model" ? "Model generated" : "Deterministic fallback"}
-        </span>
-        <span className="approval">{approvalLabel}</span>
-      </div>
-      <article className="draft">
-        <h3>Draft diagnosis</h3>
-        <pre>{result.draft}</pre>
-      </article>
-      <div>
-        <h3>Retrieved evidence</h3>
-        <ol className="citations">
-          {result.citations.map((citation) => (
-            <li key={citation.document_id}>
-              <a href={citation.source_url} target="_blank" rel="noreferrer">
-                {citation.title}
-              </a>
-              <span>{citation.score.toFixed(3)}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
-      <div>
-        <h3>Controlled tools</h3>
-        <div className="tools">
-          {result.selected_tools.map((tool) => (
-            <code key={tool}>{tool}</code>
-          ))}
-        </div>
-        <ul className="tool-results">
-          {result.tool_executions.map((execution) => (
-            <li key={execution.name}>{execution.summary}</li>
-          ))}
-        </ul>
-      </div>
-      <div>
-        <h3>Execution trace</h3>
-        <ol className="trace-spans">
-          {trace?.spans.map((span) => (
-            <li key={span.name}>
-              {span.name} · {span.duration_ms.toFixed(3)} ms
-            </li>
-          ))}
-        </ol>
-      </div>
-      {result.approval.status === "pending" ? (
-        <button type="button" disabled={approvalLoading} onClick={onApprove}>
-          {approvalLoading ? "Approving…" : "Approve draft"}
-        </button>
-      ) : null}
-      <p className="trace-id">TRACE / {result.trace_id}</p>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="empty">
-      <div className="signal" />
-      <p>Submit an issue to reveal retrieval scores, citations, selected tools, and approval state.</p>
+      <div className="status-row"><span className="mode">{result.repository.owner}/{result.repository.name}</span><span className="approval">{STATUS_LABELS[result.status]}</span></div>
+      <section><h3>Hypotheses</h3><ol className="hypotheses">{result.hypotheses.map((item) => <li key={item.id}><strong>{item.status}</strong><span>{item.statement}</span></li>)}</ol></section>
+      <section><h3>GitHub evidence</h3><ol className="citations">{result.evidence.map((item) => <li key={item.id}><a href={item.source_url} target="_blank" rel="noreferrer">{item.title}</a><code>{item.tool}</code><p>{item.preview}</p></li>)}</ol></section>
+      <article className="draft"><h3>Cited draft</h3><pre>{result.draft}</pre></article>
+      <section><h3>Replayable trajectory</h3><ol className="trace-spans">{events.map((event) => <li key={event.sequence}>{String(event.sequence).padStart(2, "0")} · {event.name}</li>)}</ol></section>
+      {result.status === "awaiting_approval" ? <div className="decision-row"><button type="button" disabled={loading} onClick={() => onDecide("approve")}>Approve evidence draft</button><button className="secondary" type="button" disabled={loading} onClick={() => onDecide("reject")}>Reject draft</button></div> : null}
+      <p className="trace-id">THREAD / {result.id} · PUBLISHED / {String(result.published)}</p>
     </div>
   );
 }

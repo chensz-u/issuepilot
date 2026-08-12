@@ -3,72 +3,66 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { App, type Diagnosis } from "./App";
+import { App, type Investigation } from "./App";
 
-const diagnosis: Diagnosis = {
-  draft: "Use the supported installer and verify the cache.",
-  mode: "deterministic_fallback",
-  citations: [
+const awaiting: Investigation = {
+  id: "investigation-1",
+  repository: { owner: "acme", name: "widget" },
+  title: "Cache failure",
+  body: "CI package cache is locked",
+  status: "awaiting_approval",
+  evidence: [
     {
-      document_id: "doc-1",
-      title: "Windows cache repair",
-      source_url: "https://example.com/issues/1",
-      score: 1.42,
+      id: "issue-7",
+      kind: "issue",
+      title: "Cache repair",
+      preview: "Stop the worker and clear only its cache.",
+      source_url: "https://github.com/acme/widget/issues/7",
+      tool: "search_issues",
     },
   ],
-  selected_tools: ["search_similar_issues", "get_repository_context"],
-  tool_executions: [
+  hypotheses: [
     {
-      name: "search_similar_issues",
-      status: "completed",
-      summary: "Resolved issue matches: Windows cache repair",
+      id: "hypothesis-1",
+      statement: "The worker may hold the package cache lock.",
+      status: "supported",
+      evidence_ids: ["issue-7"],
     },
   ],
-  approval: { id: "approval-1", status: "pending", publishable_comment: null, published: false },
-  trace_id: "trace-1",
+  draft: "Investigate the worker cache lock [issue-7].",
+  publishable_comment: null,
+  published: false,
 };
 
-describe("IssuePilot evidence console", () => {
-  it("renders diagnosis evidence and truthful fallback state", async () => {
-    const diagnose = vi.fn().mockResolvedValue(diagnosis);
-    const getTrace = vi.fn().mockResolvedValue({
-      id: "trace-1",
-      mode: "deterministic_fallback",
-      spans: [
-        { name: "retrieve", duration_ms: 1.25, attributes: { hit_count: 1 } },
-        { name: "execute_tools", duration_ms: 0.1, attributes: { execution_count: 1 } },
-      ],
-    });
-    const approve = vi.fn().mockResolvedValue({
-      ...diagnosis.approval,
+describe("IssuePilot V2 investigation console", () => {
+  it("renders repository evidence trajectory and human approval", async () => {
+    const start = vi.fn().mockResolvedValue(awaiting);
+    const replay = vi.fn().mockResolvedValue([
+      { sequence: 1, name: "validate", payload: { status: "running" } },
+      { sequence: 2, name: "tools", payload: {} },
+      { sequence: 3, name: "awaiting_approval", payload: {} },
+    ]);
+    const decide = vi.fn().mockResolvedValue({
+      ...awaiting,
       status: "approved",
-      publishable_comment: diagnosis.draft,
+      publishable_comment: awaiting.draft,
     });
-    render(<App diagnose={diagnose} getTrace={getTrace} approve={approve} />);
+    render(<App startInvestigation={start} replayEvents={replay} decide={decide} />);
 
-    fireEvent.change(screen.getByLabelText("Issue title"), {
-      target: { value: "Install fails on Windows" },
-    });
-    fireEvent.change(screen.getByLabelText("Issue details"), {
-      target: { value: "Version 2 reports a cache error" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Run diagnosis" }));
+    fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "acme/widget" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start investigation" }));
 
-    expect(await screen.findByText("Deterministic fallback")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Windows cache repair" })).toHaveAttribute(
+    expect(await screen.findByText("Awaiting human approval")).toBeInTheDocument();
+    expect(screen.getByText("The worker may hold the package cache lock.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cache repair" })).toHaveAttribute(
       "href",
-      "https://example.com/issues/1",
+      "https://github.com/acme/widget/issues/7",
     );
-    expect(screen.getByText("search_similar_issues")).toBeInTheDocument();
-    expect(screen.getByText("Resolved issue matches: Windows cache repair")).toBeInTheDocument();
-    expect(await screen.findByText("retrieve · 1.250 ms")).toBeInTheDocument();
-    expect(screen.getByText("Pending human approval")).toBeInTheDocument();
-    expect(diagnose).toHaveBeenCalledWith({
-      title: "Install fails on Windows",
-      body: "Version 2 reports a cache error",
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Approve draft" }));
+    expect(screen.getByText("search_issues")).toBeInTheDocument();
+    expect(screen.getByText("02 · tools")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve evidence draft" }));
     expect(await screen.findByText("Human approved")).toBeInTheDocument();
-    expect(approve).toHaveBeenCalledWith("approval-1");
+    expect(decide).toHaveBeenCalledWith("investigation-1", "approve");
   });
 });

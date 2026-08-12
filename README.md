@@ -1,41 +1,49 @@
-# IssuePilot
+# IssuePilot V2
 
-Evidence-first GitHub issue diagnosis copilot for an AI application/backend portfolio.
+Durable, evidence-first GitHub repository investigation agent for an AI application/backend portfolio.
 
-IssuePilot combines bounded public-issue ingestion, a BM25 relevance gate with deterministic vector reranking, executed read-only tools, optional model generation, human approval, persisted traces, and an offline quality gate. It is designed to answer the engineering question that generic RAG demos avoid: **what evidence proves this recommendation, and how do we detect a regression?**
+IssuePilot accepts a repository and failure report, executes four allowlisted GitHub read tools, forms explicit hypotheses, produces a document-id-cited draft, and pauses at a durable human approval checkpoint. The same investigation can be reloaded and resumed after the API process restarts. It never runs shell commands, clones a repository, changes GitHub state, or publishes a comment.
 
-## Evidence at a glance
+## What makes V2 an agent system
 
-| Capability | Verifiable evidence |
+| Capability | Verifiable implementation |
 | --- | --- |
-| Hybrid retrieval | BM25 blocks irrelevant evidence; vector scores rerank relevant matches with deterministic ties |
-| GitHub ingestion | Official REST API, public closed issues, 1–100 item bound, pull requests excluded |
-| Tool safety | Two allowlisted read-only adapters execute and return summaries; no shell, filesystem, arbitrary URL, or GitHub write tool |
-| Human control | Grounded drafts stay pending until approved; no-evidence drafts are blocked; approval never publishes |
-| Traceability | Retrieval, tool selection, tool execution, generation mode, duration, and redacted input persisted in SQLite |
-| Evaluation | Synthetic-v1 Hit@2, draft-to-document citation grounding, and tool-selection quality floors run in CI |
-| Model integration | Optional OpenAI Responses adapter; deterministic fallback is explicit when absent or unavailable |
+| Stateful workflow | LangGraph nodes: validate → tools → hypothesize → synthesize → approval interrupt |
+| Durable execution | `langgraph-checkpoint-sqlite`; restart/resume is covered by an automated test |
+| Real tools | Fixed GitHub REST calls for README, Issue search, failed Actions runs, and recent commits |
+| Evidence discipline | Every observation has an id, source URL, bounded preview, and originating tool |
+| Human control | Approve/reject resumes the graph; no-evidence investigations cannot be approved |
+| Replay | Ordered append-only events exposed as SSE and rendered in the React trajectory |
+| Retrieval | Apache-2.0 `rank-bm25` supplies BM25Plus; deterministic vector reranking remains explicit |
+| Evaluation | Five-case synthetic gate checks recall, distractor precision, hypotheses, exact citations, ordered trajectory, and approval safety |
 
-The latest committed offline result is [`docs/evidence/evaluation.json`](docs/evidence/evaluation.json). It is a four-case synthetic regression fixture, not a real-world accuracy claim.
+The latest V2 result is [`docs/evidence/investigation-evaluation.json`](docs/evidence/investigation-evaluation.json). All six metrics, including relevance precision against per-case distractors, are `1.0` on the committed synthetic regression fixture. That is a reproducibility claim, not production accuracy.
 
-## Run locally
+## Open-source foundations
 
-### Docker-first
+- [LangGraph](https://github.com/langchain-ai/langgraph) and [langgraph-checkpoint-sqlite](https://pypi.org/project/langgraph-checkpoint-sqlite/) (MIT) are used directly for graph execution and checkpoints.
+- [rank-bm25](https://github.com/dorianbrown/rank_bm25) (Apache-2.0) is used directly for lexical scoring.
+- [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent), [OpenHands](https://github.com/OpenHands/OpenHands), and [SWE-bench](https://github.com/SWE-bench/SWE-bench) informed trajectory/event/evaluation design; their source was not copied.
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the exact reuse boundary.
+
+## Run with Docker
 
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:8080`. The API is available at `http://localhost:8000/docs`.
+Open `http://localhost:8080`. API documentation is at `http://localhost:8000/docs`.
 
-### Development
+`GITHUB_TOKEN` is optional for public repositories and raises the API rate limit. It is sent only in the authorization header and is never stored in checkpoints, projections, events, or evaluation files.
+
+## Run in development
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev]"
-$env:PYTHONPATH = "src"
-python -m uvicorn issuepilot.api:app --reload
+.\.venv\Scripts\python -m uvicorn issuepilot.api:app --reload
 ```
 
 In a second terminal:
@@ -46,65 +54,60 @@ npm ci
 npm run dev
 ```
 
-## Import public issue evidence
-
-```powershell
-issuepilot-import pypa/pip --limit 30 --database issuepilot.db
-```
-
-Unauthenticated public requests work within GitHub's rate limit. Set `GITHUB_TOKEN` locally for a higher limit; tokens are never written to traces or snapshots. Imports update SQLite and are not committed automatically.
-
-## Run the quality gate
-
-```powershell
-pytest
-ruff check src tests
-ruff format --check src tests
-issuepilot-eval --output artifacts/evaluation.json
-Set-Location frontend
-npm test
-npm run build
-```
-
-Current synthetic-v1 floors:
-
-- retrieval Hit@2 ≥ 0.75
-- citation grounding rate = 1.00
-- tool-selection accuracy = 1.00
-
-## API flow
+## V2 API
 
 ```text
-POST /api/diagnoses -> grounded draft + citations + executed tool summaries + approval state + trace id
-GET  /api/traces/{id} -> redacted workflow spans
-POST /api/approvals/{id} -> publishable payload, published=false
+POST /api/investigations                  start and checkpoint a repository investigation
+GET  /api/investigations/{id}             reload its durable projection
+GET  /api/investigations/{id}/events      replay ordered SSE trajectory events
+POST /api/investigations/{id}/approval    resume with approve or reject
 ```
 
-## Optional model mode
+The V1 diagnosis endpoints remain available for compatibility and comparison.
 
-Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`. The backend uses the Responses API with a prompt-injection boundary: issue content is untrusted data, and the answer must use supplied evidence. HTTP, malformed, or citation-ungrounded output falls back to the deterministic draft. `/health` reports the configured generation mode.
+## Quality gates
 
-No live model-quality result is committed in this MVP. The adapter is verified with an HTTP protocol test, while CI remains keyless and reproducible.
-
-## Interview demo
-
-Use the [90-second demo guide](docs/demo/90-second-demo.md). The strongest discussion topics are hybrid-ranking trade-offs, deterministic fallback, approval-before-write, trace redaction, and why a synthetic quality gate is useful but insufficient evidence of production accuracy.
+```powershell
+.\.venv\Scripts\python -m pytest
+.\.venv\Scripts\python -m ruff check src tests
+.\.venv\Scripts\python -m ruff format --check src tests
+.\.venv\Scripts\issuepilot-license-audit
+.\.venv\Scripts\issuepilot-eval --output artifacts/evaluation.json
+.\.venv\Scripts\issuepilot-investigation-eval --output artifacts/investigation-evaluation.json
+Set-Location frontend
+npm ci
+npm test
+npm run build
+npm audit --audit-level=high
+```
 
 ## Architecture
 
 ```text
-GitHub REST -> bounded issue snapshot -> SQLite -> hybrid retriever
-                                                -> diagnosis workflow
-                                                   |- read-only tool execution
-                                                   |- deterministic/model generator
-                                                   |- pending approval
-                                                   `- redacted trace
-React evidence console <- FastAPI typed responses <-'
+GitHub REST (fixed read endpoints)
+          |
+          v
+ allowlisted evidence tools ---> bounded EvidenceArtifact records
+          |                                  |
+          v                                  v
+ LangGraph state machine ------------> cited hypotheses/draft
+          |                                  |
+          v                                  v
+ SQLite checkpoints + event projection -> React trajectory console
+                                             |
+                                             v
+                                  approve/reject interrupt resume
+                                  (published always remains false)
 ```
 
-## Non-claims
+## Interview demo
 
-- Not an autonomous maintainer or auto-comment bot.
-- No production retrieval-scale, security certification, or real-user accuracy claim.
-- Deterministic hash vectors are an offline fallback, not a semantic embedding quality claim.
-- The fixed benchmark measures regression behavior only.
+Follow [`docs/demo/90-second-demo.md`](docs/demo/90-second-demo.md). The strongest discussion points are durable graph recovery, fixed-endpoint tool security, event replay, grounding gates, and the difference between synthetic regression evidence and real-world effectiveness.
+
+## Honest boundaries
+
+- It is a read-only investigation assistant, not an autonomous maintainer or patch generator.
+- It does not download full Actions log archives yet; V2 inspects failed run metadata and links to the run.
+- It uses SQLite for a portfolio/local deployment, not a horizontally scaled production topology.
+- The committed benchmark is synthetic and small; no real-user diagnostic accuracy is claimed.
+- Optional model generation remains secondary to deterministic, citation-verifiable behavior.

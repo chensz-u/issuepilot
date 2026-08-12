@@ -1,7 +1,8 @@
 import hashlib
 import math
 import re
-from collections import Counter
+
+from rank_bm25 import BM25Plus
 
 from issuepilot.domain import KnowledgeDocument, SearchHit
 
@@ -51,36 +52,21 @@ class HybridRetriever:
         unique = {document.id: document for document in documents}
         self.documents = [unique[key] for key in sorted(unique)]
         self._tokens = [tokenize(f"{doc.title} {doc.text}") for doc in self.documents]
+        self._bm25 = BM25Plus(self._tokens) if self._tokens else None
 
     def search(self, query: str, limit: int = 5) -> list[SearchHit]:
         if limit < 1:
             raise ValueError("limit must be positive")
         query_tokens = tokenize(query)
-        query_counts = Counter(query_tokens)
         query_vector = _hash_vector(query_tokens)
-        count = len(self.documents) or 1
-        average_length = sum(map(len, self._tokens)) / count or 1.0
-        document_frequency = Counter(
-            token for tokens in self._tokens for token in set(tokens) if token in query_counts
-        )
+        lexical_scores = self._bm25.get_scores(query_tokens) if self._bm25 else []
         hits: list[SearchHit] = []
-        for document, tokens in zip(self.documents, self._tokens, strict=True):
-            frequencies = Counter(tokens)
-            shared_tokens = set(query_counts) & set(frequencies)
+        for index, (document, tokens) in enumerate(zip(self.documents, self._tokens, strict=True)):
+            shared_tokens = set(query_tokens) & set(tokens)
             has_specific_match = any(
                 token not in LOW_SIGNAL_TERMS and not token.isdigit() for token in shared_tokens
             )
-            lexical = 0.0
-            for token in query_counts:
-                frequency = frequencies[token]
-                if not frequency:
-                    continue
-                inverse_frequency = math.log(
-                    1
-                    + (count - document_frequency[token] + 0.5) / (document_frequency[token] + 0.5)
-                )
-                denominator = frequency + 1.2 * (0.25 + 0.75 * len(tokens) / average_length)
-                lexical += inverse_frequency * frequency * 2.2 / denominator
+            lexical = float(lexical_scores[index])
             vector = max(0.0, _cosine(query_vector, _hash_vector(tokens)))
             score = lexical * 0.7 + vector * 0.3
             if len(shared_tokens) >= 2 and has_specific_match:

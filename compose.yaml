@@ -3,6 +3,9 @@ services:
     build: .
     environment:
       ISSUEPILOT_DATABASE_PATH: /data/issuepilot.db
+      ISSUEPILOT_CHECKPOINT_PATH: /data/issuepilot-checkpoints.db
+      ISSUEPILOT_INVESTIGATION_PATH: /data/issuepilot-investigations.db
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
     ports:
